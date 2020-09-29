@@ -1,226 +1,391 @@
-/*Programado por Oswaldo Schermach, Sistemas de Informação UTFPR */
-/* segundo trabalho da disciplina de Fundamentos de Programação */
+/*
+ * Jogo da Vida (Conway) ? Oswaldo Schermach
+ * Sistemas de Informacao UTFPR ? Fundamentos de Programacao
+ *
+ * Revitalizado: portabilidade Linux/Windows, double buffering e padroes corrigidos.
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
-#define LIN 31 //numero de linhas do campo
-#define COL 31 //numero de colunas do campo
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
-void simulacao(int mat[][COL],int matAux[][COL], int t);
-void iniciaMatriz(int mat[][COL]);
-void detectaVivos(int mat[][COL],int matAux[][COL],int linha,int coluna);
-void imprimeMatriz(int mat[][COL]);
-void testaMatriz(int mat[][COL],int matAux[][COL]);
+#define LIN 31
+#define COL 31
+#define ATRASO_MS 120
 
-void blinker(int mat[][COL]); //inicializa uma estrutura chamada blinker, são celulas que ficam oscilando ao longo de cada geração
-void glider(int mat[][COL]); //inicializa uma estrutura chamada glider, eles se deslogam ao longo do tabuleiro a cada nova geração
-void sapo(int mat[][COL]);  //inicializa uma estrutura chamada sapo, um outro tipo de oscilador
-void randon(int mat[][COL]); //inicializa randomicamente uma populacao
-void naveEspacial(int mat[][COL]); //inicializa uma estrutura chamada nave espacial, ele se desloca em linha reta ao longo do tabuleiro
-void vidaEstavel(int mat[][COL]); // basicamente as formas mais chatas de vida, apenas existem, sem morrer nem evoluir
+typedef int Tabuleiro[LIN][COL];
 
+static void limpaTela(void);
+static void pausa(void);
+static void aguardaMs(int milissegundos);
+static void limparBufferEntrada(void);
 
+static void iniciaMatriz(Tabuleiro mat);
+static int contaVizinhos(const Tabuleiro mat, int linha, int coluna);
+static void proximaGeracao(const Tabuleiro atual, Tabuleiro proxima);
+static void copiaTabuleiro(const Tabuleiro origem, Tabuleiro destino);
+static int contaCelulasVivas(const Tabuleiro mat);
 
-int main()
+static void imprimeTabuleiro(const Tabuleiro mat, int geracao);
+static void simulacao(Tabuleiro atual, Tabuleiro proxima, int geracoes);
+
+static void blinker(Tabuleiro mat);
+static void glider(Tabuleiro mat);
+static void sapo(Tabuleiro mat);
+static void aleatorio(Tabuleiro mat);
+static void naveEspacial(Tabuleiro mat);
+static void vidaEstavel(Tabuleiro mat);
+
+static void defineCelula(Tabuleiro mat, int linha, int coluna);
+
+int main(void)
 {
-    srand(time(NULL));
-    int mat[LIN][COL];
-    int matAux[LIN][COL]; //matriz usada para salvar os dados da geração anterior
+    Tabuleiro atual;
+    Tabuleiro proxima;
     int escolha;
-    int t; //variavel usada para guardar o tempo de execucao da simulacao
+    int geracoes;
 
-    iniciaMatriz(mat); //inicializa a matriz com o numero 0
-    iniciaMatriz(matAux); //inicializa a matriz com o numero 0
+    srand((unsigned)time(NULL));
 
-    //menu do jogo
-    do{
-        printf("\t\t\tJOGO DA VIDA\n\n\n");
-        printf("\tEscolha sua opcao pressionando o numero correspondente no teclado, apos, tecle enter.\n\n");
-        printf("\t\t(1) Blinker (Oscilador)\n\t\t(2) Glider\n\t\t(3) Sapo (oscilador)\n");
-        printf("\t\t(4) Para uma inicializacao randomica\n\t\t(5) Nave Espacial\n\t\t(6) Vida Estavel\n\t\t(0) Para sair\n");
-        printf("\nOpcao: ");
-        scanf("%d",&escolha);
-        system("cls");
+    do {
+        limpaTela();
+        printf("\t\t\tJOGO DA VIDA\n\n");
+        printf("\tConway's Game of Life ? tabuleiro %dx%d\n\n", LIN - 2, COL - 2);
+        printf("\t(1) Blinker (oscilador)\n");
+        printf("\t(2) Glider (navegador)\n");
+        printf("\t(3) Sapo / Toad (oscilador)\n");
+        printf("\t(4) Populacao aleatoria\n");
+        printf("\t(5) Nave espacial (LWSS)\n");
+        printf("\t(6) Vida estavel (blocos e colmeia)\n");
+        printf("\t(0) Sair\n\n");
+        printf("Opcao: ");
 
-        printf("\n\n\n\n\n\n\n\t\t\tEscolha o tempo de execucao:  ");
-        scanf("%d",&t);
-
-        switch(escolha)
-        {
-            case 1: blinker(mat);      simulacao(mat,matAux, t);      break;
-            case 2: glider(mat);       simulacao(mat,matAux, t);      break;
-            case 3: sapo(mat);         simulacao(mat,matAux, t);      break;
-            case 4: randon(mat);       simulacao(mat,matAux, t);      break;
-            case 5: naveEspacial(mat); simulacao(mat,matAux, t);      break;
-            case 6: vidaEstavel(mat);  simulacao(mat,matAux, t);      break;
+        if (scanf("%d", &escolha) != 1) {
+            limparBufferEntrada();
+            printf("\nEntrada invalida.\n");
+            pausa();
+            continue;
         }
 
-    }while(escolha != 0);
+        if (escolha == 0) {
+            break;
+        }
 
+        limpaTela();
+        printf("\nNumero de geracoes: ");
+        if (scanf("%d", &geracoes) != 1 || geracoes <= 0) {
+            limparBufferEntrada();
+            printf("\nInforme um numero inteiro maior que zero.\n");
+            pausa();
+            continue;
+        }
+
+        iniciaMatriz(atual);
+        iniciaMatriz(proxima);
+
+        switch (escolha) {
+        case 1:
+            blinker(atual);
+            break;
+        case 2:
+            glider(atual);
+            break;
+        case 3:
+            sapo(atual);
+            break;
+        case 4:
+            aleatorio(atual);
+            break;
+        case 5:
+            naveEspacial(atual);
+            break;
+        case 6:
+            vidaEstavel(atual);
+            break;
+        default:
+            printf("\nOpcao invalida.\n");
+            pausa();
+            continue;
+        }
+
+        simulacao(atual, proxima, geracoes);
+        pausa();
+    } while (1);
+
+    limpaTela();
+    printf("\n\tObrigado por jogar. Ate a proxima!\n\n");
+    pausa();
+
+    return 0;
+}
+
+static void limpaTela(void)
+{
+#ifdef _WIN32
     system("cls");
-    printf("\n\n\n\n\n\n\n\t\t\tVoce escolheu sair.\n\n\n\n\n\n\n");
-    system("Pause");
-
-
-return 0;
+#else
+    printf("\033[2J\033[H");
+#endif
 }
-//função usada para inicializar a matriz com numeros 0
-void iniciaMatriz(int mat[][COL])
-{
-    int i,j;
 
-    for(i = 0; i < LIN; i++)
+static void pausa(void)
+{
+    printf("\nPressione Enter para continuar...");
+    limparBufferEntrada();
+    (void)getchar();
+}
+
+static void aguardaMs(int milissegundos)
+{
+    if (milissegundos <= 0) {
+        return;
+    }
+
+#ifdef _WIN32
+    Sleep((DWORD)milissegundos);
+#else
     {
-        for(j = 0; j < COL; j++)
+        struct timespec espera;
+
+        espera.tv_sec = milissegundos / 1000;
+        espera.tv_nsec = (long)(milissegundos % 1000) * 1000000L;
+        nanosleep(&espera, NULL);
+    }
+#endif
+}
+
+static void limparBufferEntrada(void)
+{
+    int c;
+
+    while ((c = getchar()) != '\n' && c != EOF) {
+    }
+}
+
+static void iniciaMatriz(Tabuleiro mat)
+{
+    int i;
+    int j;
+
+    for (i = 0; i < LIN; i++) {
+        for (j = 0; j < COL; j++) {
             mat[i][j] = 0;
-    }
-}
-/*esta função é usada para detectar quantas celulas vivas há na vizinhança de cada casa do tabuleiro,
-assim ela atribui um valor para aquela casa de acordo com a quantidade de vivos próximos*/
-
-/* Recebe como parametro a linha e a coluna, para que assim ela efetue a leitura de uma matriz 3X3 apenas
-sem contabilizar o centro (que seria o elemento a ser avaliado)*/
-void detectaVivos(int mat[][COL],int matAux[][COL],int linha,int coluna)
-{
-    int i, j;
-    int contador = 0; /*variavel que atribui o valor para uma casa de acordo com a quantidade de vizinhos vivos (neste caso vivo quer dizer o numero "1"*/
-
-    for(i = linha - 1; i <= linha + 1; i++)
-    {
-        for(j = coluna - 1; j <= coluna + 1; j++)
-        {
-            if(i != linha || j != coluna)
-                if(mat[i][j] != 0)
-                    contador++;
         }
     }
-    matAux[linha][coluna] = contador; //atribui o numero de vizinhos para o elemento central, então copia este numero para a matriz auxiliar
 }
-/*Função para imprimr a matriz*/
-void imprimeMatriz(int mat[][COL])
+
+static void defineCelula(Tabuleiro mat, int linha, int coluna)
 {
-    int i,j;
-    for(i = 1; i < LIN - 1; i++)
-    {
+    if (linha > 0 && linha < LIN - 1 && coluna > 0 && coluna < COL - 1) {
+        mat[linha][coluna] = 1;
+    }
+}
+
+static int contaVizinhos(const Tabuleiro mat, int linha, int coluna)
+{
+    int i;
+    int j;
+    int contador = 0;
+
+    for (i = linha - 1; i <= linha + 1; i++) {
+        for (j = coluna - 1; j <= coluna + 1; j++) {
+            if (i == linha && j == coluna) {
+                continue;
+            }
+            if (mat[i][j] != 0) {
+                contador++;
+            }
+        }
+    }
+
+    return contador;
+}
+
+/*
+ * Regras de Conway:
+ * - Sobrevivencia: 2 ou 3 vizinhos vivos
+ * - Morte: menos de 2 (solidao) ou mais de 3 (superlotacao)
+ * - Nascimento: celula morta com exatamente 3 vizinhos vivos
+ */
+static void proximaGeracao(const Tabuleiro atual, Tabuleiro proxima)
+{
+    int i;
+    int j;
+    int vizinhos;
+
+    for (i = 1; i < LIN - 1; i++) {
+        for (j = 1; j < COL - 1; j++) {
+            vizinhos = contaVizinhos(atual, i, j);
+
+            if (atual[i][j] != 0) {
+                proxima[i][j] = (vizinhos == 2 || vizinhos == 3);
+            } else {
+                proxima[i][j] = (vizinhos == 3);
+            }
+        }
+    }
+
+    for (i = 0; i < LIN; i++) {
+        proxima[0][i] = 0;
+        proxima[LIN - 1][i] = 0;
+        proxima[i][0] = 0;
+        proxima[i][COL - 1] = 0;
+    }
+}
+
+static void copiaTabuleiro(const Tabuleiro origem, Tabuleiro destino)
+{
+    int i;
+    int j;
+
+    for (i = 0; i < LIN; i++) {
+        for (j = 0; j < COL; j++) {
+            destino[i][j] = origem[i][j];
+        }
+    }
+}
+
+static int contaCelulasVivas(const Tabuleiro mat)
+{
+    int i;
+    int j;
+    int total = 0;
+
+    for (i = 1; i < LIN - 1; i++) {
+        for (j = 1; j < COL - 1; j++) {
+            if (mat[i][j] != 0) {
+                total++;
+            }
+        }
+    }
+
+    return total;
+}
+
+static void imprimeTabuleiro(const Tabuleiro mat, int geracao)
+{
+    int i;
+    int j;
+
+    limpaTela();
+    printf("\t\tJOGO DA VIDA ? geracao %d\n", geracao);
+    printf("\t\tCelulas vivas: %d\n\n", contaCelulasVivas(mat));
+
+    for (i = 1; i < LIN - 1; i++) {
+        printf("\t");
+        for (j = 1; j < COL - 1; j++) {
+            printf(mat[i][j] ? "[]" : "  ");
+        }
         printf("\n");
-        for(j = 1; j < COL - 1; j++)
-            if(mat[i][j] != 0)
-                printf("%3d", mat[i][j]);
-            else printf("   ");
+    }
+
+    fflush(stdout);
+}
+
+static void simulacao(Tabuleiro atual, Tabuleiro proxima, int geracoes)
+{
+    int g;
+
+    imprimeTabuleiro(atual, 0);
+    aguardaMs(ATRASO_MS * 2);
+
+    for (g = 1; g <= geracoes; g++) {
+        proximaGeracao(atual, proxima);
+        copiaTabuleiro(proxima, atual);
+        imprimeTabuleiro(atual, g);
+        aguardaMs(ATRASO_MS);
     }
 }
-/*Função que faz o teste de cada elemento da matriz, e decide quem vive e quem morre em cada elemento
-sobrevivência: uma célula passa da geração corrente para a geração seguinte se ela tiver duas ou três células vizinhas vivas na geração corrente;
-morte: uma célula viva morre ao fim da geração corrente se ela tem menos de duas (solidão) ou mais de três células vivas (inanição) na sua vizinhança;
-nascimento: uma célula morta (re)nasce na geração seguinte caso ela tiver exatamente três células vivas na sua vizinhança na geração anterior.
-*/
-void testaMatriz(int mat[][COL],int matAux[][COL])
-{
-    int i, j;
 
-    for(i = 0; i < LIN; i++)
-    {
-        for(j = 0; j < COL; j++)
-        {
-            if(matAux[i][j] < 2 || matAux[i][j] > 3)
-                mat[i][j] = 0;
-            if( matAux[i][j] == 3)
-                mat[i][j] = 1;
-        }
-    }
-}
-/*Função que percorre a matriz elemento a elemento, então faz o envio da matriz 3X3 para a função que detecta vivos
-após isso executa a função que faz os testes necessários */
-void simulacao(int mat[][COL],int matAux[][COL], int t)
+static void blinker(Tabuleiro mat)
 {
-    int i, j;
-    int tempo;
+    defineCelula(mat, 5, 10);
+    defineCelula(mat, 5, 11);
+    defineCelula(mat, 5, 12);
 
-    for(tempo = 0;tempo < t; tempo++)
-    {
-        for(i = 1; i < LIN - 1; i++)
-        {
-            for(j = 1; j < COL - 1; j++)
-                detectaVivos(mat,matAux, i, j);
-        }
-        testaMatriz(mat,matAux);
-        imprimeMatriz(mat);
-        system("cls");
-    }
+    defineCelula(mat, 15, 15);
+    defineCelula(mat, 15, 16);
+    defineCelula(mat, 15, 17);
 }
-void blinker(int mat[][COL])
-{
 
-    mat[5][10] = 1;
-    mat[5][11] = 1;
-    mat[5][12] = 1;
+static void glider(Tabuleiro mat)
+{
+    /* Glider canonico:
+     *  . X .
+     *  . . X
+     *  X X X
+     */
+    defineCelula(mat, 15, 16);
+    defineCelula(mat, 16, 17);
+    defineCelula(mat, 17, 15);
+    defineCelula(mat, 17, 16);
+    defineCelula(mat, 17, 17);
+}
 
-    mat[15][15] = 1;
-    mat[15][16] = 1;
-    mat[15][17] = 1;
-}
-void glider(int mat[][COL])
+static void sapo(Tabuleiro mat)
 {
-    mat[15][15] = 1;
-    mat[15][16] = 1;
-    mat[15][17] = 1;
-    mat[16][15] = 1;
-    mat[17][17] = 1;
+    /* Toad (periodo 2):
+     *  . X X X
+     *  X X X .
+     */
+    defineCelula(mat, 11, 13);
+    defineCelula(mat, 11, 14);
+    defineCelula(mat, 11, 15);
+    defineCelula(mat, 12, 12);
+    defineCelula(mat, 12, 13);
+    defineCelula(mat, 12, 14);
 }
-void sapo(int mat[][COL])
-{
-    mat[11][13] = 1;
-    mat[11][14] = 1;
-    mat[11][15] = 1;
-    mat[12][12] = 1;
-    mat[12][13] = 1;
-    mat[12][14] = 1;
-}
-/*Percorre elemento a elemento preenchendo com 1 ou 0 aleatoriamente */
-void randon(int mat[][COL])
-{
-    int i, j;
 
-    for(i = 0; i < LIN; i++)
-        for(j = 0; j < COL; j++)
+static void aleatorio(Tabuleiro mat)
+{
+    int i;
+    int j;
+
+    for (i = 1; i < LIN - 1; i++) {
+        for (j = 1; j < COL - 1; j++) {
             mat[i][j] = rand() % 2;
-
+        }
+    }
 }
-void naveEspacial(int mat[][COL])
+
+static void naveEspacial(Tabuleiro mat)
 {
-    mat[15][16] = 1;
-    mat[15][19] = 1;
-    mat[16][15] = 1;
-    mat[17][15] = 1;
-    mat[17][19] = 1;
-    mat[18][15] = 1;
-    mat[18][16] = 1;
-    mat[18][17] = 1;
-    mat[18][18] = 1;
+    /* Lightweight spaceship (LWSS) */
+    defineCelula(mat, 15, 16);
+    defineCelula(mat, 15, 18);
+    defineCelula(mat, 16, 14);
+    defineCelula(mat, 17, 14);
+    defineCelula(mat, 17, 18);
+    defineCelula(mat, 18, 15);
+    defineCelula(mat, 18, 16);
+    defineCelula(mat, 18, 17);
+    defineCelula(mat, 18, 18);
+    defineCelula(mat, 19, 14);
+    defineCelula(mat, 19, 18);
 }
-void vidaEstavel(int mat[][COL])
+
+static void vidaEstavel(Tabuleiro mat)
 {
-    mat[15][15] = 1;
-    mat[15][16] = 1;
-    mat[16][15] = 1;
-    mat[16][16] = 1;
+    /* Blocos 2x2 */
+    defineCelula(mat, 5, 5);
+    defineCelula(mat, 5, 6);
+    defineCelula(mat, 6, 5);
+    defineCelula(mat, 6, 6);
 
-    mat[5][5] = 1;
-    mat[5][6] = 1;
-    mat[6][5] = 1;
-    mat[6][6] = 1;
+    defineCelula(mat, 15, 15);
+    defineCelula(mat, 15, 16);
+    defineCelula(mat, 16, 15);
+    defineCelula(mat, 16, 16);
 
-    mat[20][20] = 1;
-    mat[20][21] = 1;
-    mat[21][20] = 1;
-    mat[21][22] = 1;
-    mat[22][21] = 1;
+    /* Colmeia (beehive) */
+    defineCelula(mat, 20, 20);
+    defineCelula(mat, 20, 21);
+    defineCelula(mat, 21, 19);
+    defineCelula(mat, 21, 22);
+    defineCelula(mat, 22, 20);
+    defineCelula(mat, 22, 21);
 }
-
-
-
-
-
-
-
